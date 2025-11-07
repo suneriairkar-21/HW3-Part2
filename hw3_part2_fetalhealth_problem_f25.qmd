@@ -1,0 +1,550 @@
+---
+title: "HW3-Part 2-Classification models"
+format: 
+  html:
+    embed-resources: true
+---
+
+## Step 1 - Familiarize yourself with the data and the assignment
+
+Save this file as a new Quarto Markdown document and name it something that
+includes your last name in the filename. Save it into the
+same folder as this file. Create a new R Studio Project based on this folder.
+
+This assignment will focus on building simple classification models for
+predicting fetal health based on a number of clinical measurements known
+as *cardiotocographic data*. 
+
+The following introductory information was taken from the main
+[Kaggle Dataset page](https://www.kaggle.com/andrewmvd/fetal-health-classification) for this data:
+
+
+>    **Context**
+
+> Reduction of child mortality is reflected in several of the United Nations' Sustainable Development Goals and is a key indicator of human progress. The UN expects that by 2030, countries end preventable deaths of newborns and children under 5 years of age, with all countries aiming to reduce under‑5 mortality to at least as low as 25 per 1,000 live births.
+> 
+Parallel to notion of child mortality is of course maternal mortality, which accounts for 295 000 deaths during and following pregnancy and childbirth (as of 2017). The vast majority of these deaths (94%) occurred in low-resource settings, and most could have been prevented.
+>
+> In light of what was mentioned above, Cardiotocograms (CTGs) are a simple and cost accessible option to assess fetal health, allowing healthcare professionals to take action in order to prevent child and maternal mortality. The equipment itself works by sending ultrasound pulses and reading its response, thus shedding light on fetal heart rate (FHR), fetal movements, uterine contractions and more.
+>
+> **Data**
+>
+> This dataset contains 2126 records of features extracted from Cardiotocogram exams, which were then classified by three expert obstetritians into 3 classes:
+
+> * Normal
+> * Suspect
+> * Pathological
+
+The definitions of the columns are:
+
+    * baseline value - FHR baseline (beats per minute)
+    * accelerations - Number of accelerations per second
+    * fetal_movement - Number of fetal movements per second
+    * uterine_contractions - Number of uterine contractions per second
+    * light_decelerations - Number of light decelerations per second
+    * severe_decelerations - Number of severe decelerations per second
+    * prolongued_decelerations - Number of prolonged decelerations per second
+    * abnormal_short_term_variability - Percentage of time with abnormal short term variability
+    * mean_value_of_short_term_variability - Mean value of short term variability
+    * percentage_of_time_with_abnormal_long_term_variability - Percentage of time with abnormal long term variability
+    * mean_value_of_long_term_variability - Mean value of long term variability
+    * histogram_width - Width of FHR histogram
+    * histogram_min - Minimum (low frequency) of FHR histogram
+    * histogram_max - Maximum (high frequency) of FHR histogram
+    * histogram_number_of_peaks - Number of histogram peaks
+    * histogram_number_of_zeroes - Number of histogram zeros
+    * histogram_mode - Histogram mode
+    * histogram_mean - Histogram mean
+    * histogram_median - Histogram median
+    * histogram_variance - Histogram variance
+    * histogram_tendency - Histogram tendency
+
+You can learn much more about the study behind this dataset from the following
+published paper:
+
+* https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6822315/
+
+While in the original study and dataset, there were three classes for the
+target variable (Normal, Suspect, Pathological), we will convert this to
+a binary classification problem where 1 will be Suspect or Pathological and
+0 will be Normal. Multi-class problems are a bit beyond the scope of this
+introduction to classification problems.
+
+```{r libraries}
+library(dplyr)   # Group by analysis and other SQLish things.
+library(ggplot2) # Plotting, of course
+library(tidyr)   # Data reshaping
+library(tidymodels)   # Many aspects of predictive modeling
+library(corrplot)  # Correlation plots
+library(skimr)       # An automated EDA tool (you saw this in a previous assignment)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(vip)
+```
+
+## Step 2 - Load data
+
+You'll notice that there is a subfolder named **data**.
+Inside of it you'll find the data file for this assignment:
+
+- **fetal_health.csv**
+
+
+### Load the data
+
+```{r load_data}
+fetal_health <- read.csv("./data/fetal_health.csv")
+```
+
+Our target variable will be based on the `fetal_health` variable. Let's check the current values.
+
+```{r}
+table(fetal_health$fetal_health)
+```
+
+Now we will recode the 1's as a 0 and the 2's and 3's as a 1. I'm going to do this in a new column
+so that we can check and make sure we've got it right.
+
+```{r}
+fetal_health$b_fetal_health <- fetal_health$fetal_health
+fetal_health$b_fetal_health[fetal_health$b_fetal_health == 1] <- 0
+fetal_health$b_fetal_health[fetal_health$b_fetal_health >= 2] <- 1
+
+table(fetal_health$b_fetal_health, fetal_health$fetal_health)
+```
+
+Looks good, let's drop the original `fetal_health` column and convert the b_fetal_health` column
+to a factor. I'm explicitly setting the order of the factor levels so that "0" is the first level just
+so there's no confusion.
+
+```{r}
+fetal_health <- fetal_health  |>  
+  select (!fetal_health) 
+
+fetal_health$b_fetal_health <- factor(fetal_health$b_fetal_health, levels=c("0", "1"))
+```
+
+Find the number of patients and the percentage of patients for the two fetal health levels - 1 and 2. You'll
+see that there are about 78% of the patients with a normal fetal health assessment (i.e. `b_fetal_health` = 0)
+
+```{r target_prop_check}
+
+```
+
+Use `str`, `summary`, and `skim` to get a sense of the data. Our response variable, the thing we will be trying to predict is `b_fetal_health`. 
+
+```{r firstlook}
+str(fetal_health)
+```
+
+
+
+```{r}
+summary(fetal_health)
+```
+
+```{r}
+skim(fetal_health)
+```
+
+## Step 3 - Data partitioning
+
+Ok, it's time to do an initial split of our data into training and test datasets.
+
+For data partitioning, we will use the [rsample](https://rsample.tidymodels.org/) package. Let's allocate 80% of the records to our training set and 20% to the test set. Make sure you specify the `strata = ` argument. After partitioning, confirm that the `b_fetal_health` proportions of 1's and 0's are as expected. Discuss.
+
+```{r partitioning_soln}
+# set.seed(983)- # Do NOT change this value
+# pct_train <- ???
+# 
+# # Create a "split object" based on an 80/20, stratified split. 
+# fetal_health_split <- rsample::initial_split(fetal_health, 
+#                                         prop = ???,
+#                                         strata = ???)
+# 
+# # Create train and test dataframes based on the split
+# fetal_health_train <- ???
+# fetal_health_test <- ???
+```
+
+
+## Step 4 - EDA
+
+Do some EDA to try to uncover some relationships that may end up being
+useful in building a predictive model for `b_fetal_health`. You can only use the training data for this. You learned
+things in HW2 which should be useful here. In particular, you should at least do:
+
+- a correlation plot
+- faceted box or violin plots for all of the numeric variables with the target variable as the grouping variable,
+
+I'll give you a little help for each of these.
+
+### Correlation plot
+
+> We'll start with a correlation plot. The `tl.cex` argument helps us display the 
+plot by controlling the size of the text label. It's behavior is a little unpredictable but you can play around with various values. 
+
+```{r corrplot}
+
+
+```
+
+> PUT YOUR INTERPRETATION HERE
+
+Now make a bunch of boxplots (or violin) that are grouped by the target variable. There are a few ways we can do this.
+ 
+Instead of creating separate plots for each variable, we could create
+a faceted plot, where we facet by the variable. To do this, we need to reshape
+our data from wide to long. We can do this using `tidyr::pivot_longer()`.
+
+```{r reshape_longer}
+# fetal_health_long <- ??? |> 
+#   pivot_longer(???)
+```
+
+Now we can create the faceted plot using the long data.
+
+```{r faceted_var_plot, fig.width=12, fig.height=16}
+
+
+# fetal_health_long %>% 
+#   ggplot() + 
+#   geom_boxplot(???) +
+#   facet_wrap(???) +
+#   ggtitle("Box plots by predictor") +
+#   xlab("Fetal health (0=normal)")
+```
+
+> PUT YOUR SUMMARY COMMENTS HERE
+
+## Step 5 - Building and evaluation of predictive classification models
+
+Now that you know a little more about the data, it's time to start building a
+few classification models for `b_fetal_health`. We will use:
+
+- logistic regression
+- a simple decision tree
+- a random forest
+
+
+We will start out using overall prediction accuracy
+as our metric but we might want to consider other metrics.
+
+**QUESTION** Why might overall prediction accuracy not be the most appropriate metric to consider? What other
+metrics might be important and why?
+
+> PUT YOUR ANSWER HERE
+
+### The null model
+
+A very simple model would be to simply predict that `b_fetal_health` is equal to 0. On
+the training data we saw that we'd be ~78% accurate.
+
+**QUESTION** What is the sensitivity and specificity of the null model?
+
+> PUT YOUR ANSWER HERE
+
+So, as we begin fitting more complicated models, remember that we need to
+outperform the null model to make it worth it to use more complicated models.
+
+
+### Model 1 -  logistic regression model
+
+For logistic regression, you must use tidymodels and you should see our class notes on logistic regression, in particular, the section titled "Logistic regression with tidymodels". For this modeling technique, you must:
+
+* fit at least two different logistic regression models, each of which should have at least five variables. For your first model, use variables that you think might have predictive value based on the EDA you did. For the second model, use all of the variables.
+* use 5-fold cross-validation as our resampling scheme for model fitting,
+* just take the default threshold value of 0.5,
+* assess the model's performance on the training data (accuracy, sensitivity, specificity, confusion matrix),
+* use the model to make predictions on the test data and assess the model's performance on the test data,
+* discuss the results.
+
+**HACKER EXTRA CREDIT** Create ROC curves and compute AUC for your logistic regression models. Discuss your interpretation of these plots.
+
+Start by creating a classification model object using the appropriate `engine = ` argument for logistic regression.
+
+```{r glm_spec}
+#glm_spec <- ???(mode = ???", engine = "???")
+```
+
+
+Create a recipe for your first model which specifies the formula for your logistic regression model.
+
+```{r recipe_1}
+# recipe_1 <-
+#   recipe(b_fetal_health ~ ??? 
+#            data = ???)
+
+
+
+```
+
+Now create a workflow object and the recipe and model to it.
+
+```{r}
+# wf_1 <- ??? %>% 
+#   ???(recipe_1) %>% 
+#   ???(???)
+
+```
+
+Now we'll create a folds object to use for k-crossfold validation.
+
+```{r}
+set.seed(259)
+fetal_health_folds <- vfold_cv(fetal_health_train, v = 5)
+ctrl_preds <- control_resamples(save_pred = TRUE, save_workflow = TRUE)
+```
+
+Now you should fit your logistic regression model using folds object we just created.
+
+```{r}
+# fit_results_logreg1 <- 
+#   ??? %>% 
+#   ???(??? = fetal_health_folds, control = ctrl_preds)
+```
+
+Now we can collect the metrics.
+
+```{r}
+collect_metrics(fit_results_logreg1)
+```
+
+Let's refit on entire training data set and make predictions on the test data. Recall from the notes that we use the `last_fit` function to do this. Then we can use the `yardstick` package to compute accuracy, sensitivity and specificity. 
+
+```{r}
+# last_fit_logreg1 <- last_fit(???, ???)
+
+# These are prediction on the test data
+
+final_predicted_classes_1 <- collect_predictions(last_fit_logreg1)
+
+# Accuracy
+# acc_test_logreg1 <- yardstick::accuracy(???, 
+#                 estimate = ???,
+#                 truth = ???, event_level = "second")
+
+# Do similar things for sensitivity and specificity.
+# sens_test_logreg1 <- ???
+  
+# spec_test_logreg1 <- ???
+
+# Combine the results into a single dataframe
+  
+# stats_test_logreg1 <- bind_rows(acc_test_logreg1, 
+#                                  sens_test_logreg1, 
+#                                  spec_test_logreg1) |> 
+#   mutate(data = 'test',
+#          model = 'logreg1')
+
+# Confusion matrix
+# yardstick::conf_mat(???, 
+#                 estimate = ???,
+#                 truth = ???)
+ 
+# stats_test_logreg1
+
+
+```
+
+> PUT YOUR INTERPRETATION HERE
+
+Let's fit a second model using all of the variables.
+
+```{r recipe_2}
+recipe_2 <-
+  recipe(b_fetal_health ~ ., 
+           data = fetal_health_train)
+
+# Create your workflow object and add the recipe and model
+wf_2 <- ???
+```
+
+Just like you did above, fit the model and assess its performance. Compare the results to the first logistic regression model. Use as many code chunks as needed.
+
+```{r logreg2_fit_results}
+
+```
+
+> PUT YOUR INTERPRETATION HERE
+
+
+### Model 2 - a simple decision tree
+
+For this model, we will **NOT** use a resampling scheme (i.e. no k-fold cross-validation). We will just use our one simple train-test split. We'll use `rpart` for the engine, just as we did in the notes.
+
+Create your model specification.
+
+```{r tree_spec}
+# tree_spec <- ??? %>%
+#   set_engine(???) %>% 
+#   set_mode(???)
+
+```
+
+Let's fit a tree to the training data using just a few variables so that we
+can easily see what's going on.
+
+```{r tree1_fit}
+tree1_fit <- fit(tree_spec, b_fetal_health ~  
+           accelerations + 
+           baseline.value +
+           histogram_median + +
+           uterine_contractions, data = fetal_health_train)
+```
+
+Let's see what the fitted object looks like.
+
+```{r}
+tree1_fit
+```
+
+The `rpart.plot()` function lets us see the actual (upside down) tree. Since
+this function only works with `rpart` objects, we need to extract it from our
+`fit` object. 
+
+
+```{r tree1_plot}
+tree1_fit %>%
+  extract_fit_engine() %>%
+  rpart.plot(tweak = 1.2)
+```
+
+**QUESTION** Explain each of the values in the node in the third row from the top in the middle (light blue with values 0, 0.31 and 26%) What conditions need to be true for a case to end up in that node?
+
+> PUT YOUR ANSWERS HERE
+
+Now use `augment()` function along with `yardstick::sens()`, `yardstick::spec()`, and `yardstick::conf_mat()` to compute sensitivity, specificity, and the confusion matrix on the **training data**. In other words, we are just assessing how well the tree fits the data. 
+
+Notice in the code skeleton that I'm explicitly specifying the **yardstick** package and a function from it. I'm doing that because the `spec` function name clashes with another library we have loaded - you can see this by doing a `help(spec)`. Also notice that we need `event_level = "second"` since "0" comes before "1" in the factor levels for `b_fetal_health` and it's the "1"'s that are the thing we are trying to detect (abnormal results). We need `event_level = "second" for accuracy, sensitivity and specificity calculations (we don't need it for the confusion matrix).
+
+```{r tree1_metrics_train}
+# accuracy
+# augment(???, new_data = ???) %>%
+#   yardstick::accuracy(truth = ???, 
+#                       estimate = ???,
+#                       event_level = "second")
+
+# Sensitivity
+#???
+  
+# Specificity
+#???
+
+# Confusion matrix
+#???
+```
+
+
+**QUESTION** What is the predicted class and the probabilities of 0 and 1 for the very first row in `fetal_health_train`? **HINT** There is nothing to compute - you just need to look at the appropriate tibble and you've already used this tibble above.
+
+```{r explore_first_row}
+
+```
+
+Now, make predictions for the test data for this first tree and compute sensitivity, specificity and the confusion matrix. Remember (see notes) that you can use the `augment()` function to compute predicted values for the test data.
+
+
+```{r tree1_metrics_test}
+# Accuracy
+# acc_test_tree <- ???(tree1_fit, new_data = ???) %>%
+#   yardstick::accuracy(truth = ???, 
+#                       estimate = ???,
+#                       event_level = "second")
+
+# Sensitivity
+
+# Specificity
+
+stats_test_tree1 <- bind_rows(acc_test_tree, sens_test_tree, spec_test_tree) |> 
+  mutate(data = 'test',
+         model = 'tree1')
+
+# Confusion matrix
+# augment(tree1_fit, new_data = ???) %>%
+#   yardstick::conf_mat(truth = ???, estimate = .pred_class)
+
+stats_test_tree1
+```
+
+**QUESTION** Compare the results to what you got on the training data. Did the metrics get better or worse? Is this expected? Why? Is there evidence of overfitting? 
+
+Here's some code that could be useful in organizing and comparing the results.
+
+```{r tree_compare_soln}
+stats_tree1 <- bind_rows(stats_train_tree1, stats_test_tree1)
+# stats_tree1 |> 
+#   select(.metric, .estimate, data) |> 
+#   pivot_wider(names_from = ???, values_from = ???)
+```
+
+
+> PUT YOUR INTERPRETATION HERE
+
+Now, we'll clean up the workspace a bit before trying the random forest.
+
+```{r}
+rm(tree1_fit)
+```
+
+### Model 3 - Random Forest
+
+Instead of using a simple decision tree, use a random forest. Obviously, you should now use all the variables that you think might be useful for predicting `b_fetal_health`.
+
+* fit the model on the training data,
+* assess the model's performance on the training data using the `augment()` function like we did for the decision tree,
+* use the model to make predictions on the test data and assess the model's performance on the test data using the `augment()` function,
+* create an importance plot to get a sense of the relative importance of the different variables,
+* discuss the results
+
+In your discussion of the results you should talk about things like:
+
+* how accurate is the model in predicting on the test data?
+* is their evidence of overfitting?
+* how does the model do in terms of other metrics like sensitivity and specificity?
+* how does the performance of the random forest compare to the simple decision tree?
+
+```{r rf_spec}
+# rf_spec <- rand_forest() %>%
+#   set_engine("???", importance = ???, na.action = na.omit) %>%
+#   set_mode("???")
+```
+
+Fit the model
+
+```{r rf_fit}
+# rf_fit <- fit(???, ???, data = ???)
+```
+
+Compute accuracy, sensitivity and specificity for the fit.
+
+```{r rf_fit_metrics}
+
+```
+
+Let's look at an importance plot to get a sense of which variables seem to be influential.
+
+
+```{r}
+# vip(???)
+```
+Now let's compute accuracy, sensitivity and specificity on the test data.
+
+```{r rf_test_metrics}
+
+```
+
+How do test and train performance compare?
+
+> PUT YOUR INTERPRETATION HERE
+
+```{r}
+rm(rf_fit)
+```
+
+## Final model comparisons
+
+So, if you had to recommend a model to consider using in practice, which of the models (if any) would you recommend and why?
+
+> PUT YOUR FINAL RECOMMENDATIONS AND SUMMARY COMMENTS HERE.
