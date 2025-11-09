@@ -6,4 +6,4 @@ Through this extra credit task, I learned how to initialize a Git repository, co
 **Project Repository Link:**  
 https://github.com/suneriairkar-21/HW3-Part2
 
-All commits and project files are up to date for evaluation.
+All commits and project files are up to date for the assignment evaluation.
